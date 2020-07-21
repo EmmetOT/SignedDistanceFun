@@ -12,6 +12,12 @@ float GetDistance_Sphere(float3 position, float radius)
 {
     return length(position) - radius;
 }
+
+float Test_GetDist(float3 position)
+{
+    return GetDistance_Torus(position, 0.5, 0.1);
+    //return GetDistance_Sphere(position, 0.5);
+}
             
 float3 GetNormal(float3 position)
 {
@@ -19,14 +25,16 @@ float3 GetNormal(float3 position)
 
     // three partial deriviatives
     float3 gradient = float3(
-        GetDistance_Torus(position - epsilon.xyy, 0.5, 0.1),
-        GetDistance_Torus(position - epsilon.yxy, 0.5, 0.1),
-        GetDistance_Torus(position - epsilon.yyx, 0.5, 0.1));
+        Test_GetDist(position - epsilon.xyy),
+        Test_GetDist(position - epsilon.yxy),
+        Test_GetDist(position - epsilon.yyx));
 
-    float3 normal = GetDistance_Torus(position, 0.5, 0.1) - gradient;  
+    float3 normal = Test_GetDist(position) - gradient;  
                 
     return normalize(normal);
 }
+
+
 
 float Raymarch(float3 rayOrigin, float3 rayDirection)
 {
@@ -36,7 +44,7 @@ float Raymarch(float3 rayOrigin, float3 rayDirection)
     for (int i = 0; i < MAXIMUM_STEPS; i++)
     {
         float3 position = rayOrigin + distanceFromOrigin * rayDirection;
-        distanceFromSurface = GetDistance_Torus(position, 0.5, 0.1);
+        distanceFromSurface = Test_GetDist(position);
         distanceFromOrigin += distanceFromSurface;
 
         if (distanceFromSurface < MIN_SURFACE_DISTANCE || distanceFromOrigin > MAXIMUM_DISTANCE)
