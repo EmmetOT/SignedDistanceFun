@@ -37,7 +37,7 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
     private static int SDF_OBJECT_BUFFER_PROPERTY => m_sdfObjectBufferProperty != -1 ? m_sdfObjectBufferProperty : (m_sdfObjectBufferProperty = Shader.PropertyToID("ObjectBuffer"));
 
     private static int m_sdfObjectTransformBufferProperty = -1;
-    private static int SDF_OBJECT_TRANSFORM_BUFFER_PROPERTY => m_sdfObjectTransformBufferProperty != -1 ? m_sdfObjectTransformBufferProperty : (m_sdfObjectTransformBufferProperty = Shader.PropertyToID("ObjectTransformBuffer"));
+    private static int SDF_OBJECT_TRANSFORM_BUFFER_PROPERTY => m_sdfObjectTransformBufferProperty != -1 ? m_sdfObjectTransformBufferProperty : (m_sdfObjectTransformBufferProperty = Shader.PropertyToID("ObjectTransformsBuffer"));
 
     private static int m_sdfObjectCountProperty = -1;
     private static int SDF_OBJECT_COUNT_PROPERTY => m_sdfObjectCountProperty != -1 ? m_sdfObjectCountProperty : (m_sdfObjectCountProperty = Shader.PropertyToID("ObjectCount"));
@@ -120,9 +120,31 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
         m_objectTransformBuffer?.Dispose();
     }
 
-    private void LateUpdate()
+    private void Update()
     {
-        UpdateTransforms();
+        bool hasMovedObjects = false;
+        bool hasDirtyObjects = false;
+
+        for (int i = 0; i < m_objects.Count; i++)
+        {
+            if (m_objects[i].IsDirty)
+            {
+                hasDirtyObjects = true;
+                m_objects[i].SetDirty(false);
+            }
+
+            if (m_objects[i].transform.hasChanged)
+            {
+                hasMovedObjects = true;
+                m_objects[i].transform.hasChanged = false;
+            }
+        }
+
+        if (hasDirtyObjects)
+            UpdateObjectData();
+
+        if (hasMovedObjects)
+            UpdateTransforms();
 
 #if UNITY_EDITOR
         Transform sceneViewTransform = SceneView.lastActiveSceneView.camera.transform;
@@ -138,7 +160,7 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
         m_objectTransforms.Clear();
 
         for (int i = 0; i < m_objects.Count; i++)
-            m_objectTransforms.Add(Matrix4x4.TRS(Vector3.up * 5f, Quaternion.identity, Vector3.one));
+            m_objectTransforms.Add(m_objects[i].transform.localToWorldMatrix);
 
         m_objectTransformBuffer.SetData(m_objectTransforms);
     }

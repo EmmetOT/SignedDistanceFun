@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using NaughtyAttributes;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -13,16 +14,22 @@ public class SDFObject : MonoBehaviour
     }
 
     [SerializeField]
+    [OnValueChanged("Internal_SetDirtyTrue")]
     private Type m_type;
     public Type ObjectType => m_type;
 
     [SerializeField]
+    [OnValueChanged("Internal_SetDirtyTrue")]
     private Color m_colour;
     public Color Colour => m_colour;
 
     [SerializeField]
+    [OnValueChanged("Internal_SetDirtyTrue")]
     private Vector3 m_data;
     public Vector3 Data => m_data;
+
+    private bool m_isDirty = false;
+    public bool IsDirty => m_isDirty;
 
     private void OnEnable()
     {
@@ -34,6 +41,19 @@ public class SDFObject : MonoBehaviour
     {
         if (SignedDistanceFieldVolume.Instance != null) 
             SignedDistanceFieldVolume.Instance.DeregisterSDFObject(this);
+    }
+
+    private void Internal_SetDirtyTrue()
+    {
+        SetDirty(true);
+    }
+
+    public void SetDirty(bool isDirty)
+    {
+        if (!Application.isPlaying)
+            return;
+
+        m_isDirty = isDirty;
     }
 }
 
