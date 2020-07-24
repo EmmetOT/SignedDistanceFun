@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using NaughtyAttributes;
 
 public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
 {
@@ -13,19 +14,30 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
 
     [SerializeField]
     [Range(0f, 1f)]
+    [OnValueChanged("SetSmoothing")]
     private float m_smoothing = 0.05f;
 
     private enum AmbientOcclusionMode { ON, OFF, TEST };
 
     [SerializeField]
+    [OnValueChanged("SetAmbientOcclusionKeyword")]
     private AmbientOcclusionMode m_ambientOcclusionMode;
 
-    private ComputeBuffer m_objectBuffer;
+    [SerializeField]
+    [OnValueChanged("SetShadowsKeyword")]
+    private bool m_enableShadows = true;
 
+    private ComputeBuffer m_objectBuffer;
+    private ComputeBuffer m_objectTransformBuffer;
+
+    private readonly List<Matrix4x4> m_objectTransforms = new List<Matrix4x4>();
     private readonly List<SDF_GPU_Data> m_gpuDataObjects = new List<SDF_GPU_Data>();
 
     private static int m_sdfObjectBufferProperty = -1;
     private static int SDF_OBJECT_BUFFER_PROPERTY => m_sdfObjectBufferProperty != -1 ? m_sdfObjectBufferProperty : (m_sdfObjectBufferProperty = Shader.PropertyToID("ObjectBuffer"));
+
+    private static int m_sdfObjectTransformBufferProperty = -1;
+    private static int SDF_OBJECT_TRANSFORM_BUFFER_PROPERTY => m_sdfObjectTransformBufferProperty != -1 ? m_sdfObjectTransformBufferProperty : (m_sdfObjectTransformBufferProperty = Shader.PropertyToID("ObjectTransformBuffer"));
 
     private static int m_sdfObjectCountProperty = -1;
     private static int SDF_OBJECT_COUNT_PROPERTY => m_sdfObjectCountProperty != -1 ? m_sdfObjectCountProperty : (m_sdfObjectCountProperty = Shader.PropertyToID("ObjectCount"));
@@ -51,12 +63,19 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
 
     private void RefreshBuffer()
     {
+        m_objectBuffer?.Dispose();
+        m_objectTransformBuffer?.Dispose();
+
         m_objectBuffer = new ComputeBuffer(m_objects.Count, SDF_GPU_Data.Stride);
+        m_objectTransformBuffer = new ComputeBuffer(m_objects.Count, sizeof(float) * 16);
+
         Shader.SetGlobalBuffer(SDF_OBJECT_BUFFER_PROPERTY, m_objectBuffer);
+        Shader.SetGlobalBuffer(SDF_OBJECT_TRANSFORM_BUFFER_PROPERTY, m_objectTransformBuffer);
         Shader.SetGlobalInt(SDF_OBJECT_COUNT_PROPERTY, m_objects.Count);
         Shader.SetGlobalFloat(SMOOTHING_PROPERTY, m_smoothing);
 
-        SetAmbientOcclusionKeyword();
+        UpdateObjectData();
+        UpdateTransforms();
     }
 
     private void SetAmbientOcclusionKeyword()
@@ -67,36 +86,43 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
             string val = prefix + mode.ToString();
 
             if (mode == m_ambientOcclusionMode)
-            {
-                //Debug.Log("enabling " + val);
                 m_material.EnableKeyword(val);
-            }
             else
-            {
-                //Debug.Log("disabling " + val);
                 m_material.DisableKeyword(val);
-            }
         }
+    }
 
-        //Debug.Log("============================");
+    private void SetShadowsKeyword()
+    {
+        if (m_enableShadows)
+            m_material.EnableKeyword("SHADOWS_ON");
+        else
+            m_material.DisableKeyword("SHADOWS_ON");
+    }
+
+    private void SetSmoothing()
+    {
+        Shader.SetGlobalFloat(SMOOTHING_PROPERTY, m_smoothing);
     }
 
     private void OnEnable()
-    {
+    {   
+        SetAmbientOcclusionKeyword();
+        SetShadowsKeyword();
+        SetSmoothing();
+
         RefreshBuffer();
     }
 
     private void OnDisable()
     {
-        m_objectBuffer.Dispose();
+        m_objectBuffer?.Dispose();
+        m_objectTransformBuffer?.Dispose();
     }
 
-    private void Update()
+    private void LateUpdate()
     {
-        SetAmbientOcclusionKeyword();
-        UpdateSphereStructs();
-
-        Shader.SetGlobalFloat(SMOOTHING_PROPERTY, m_smoothing);
+        UpdateTransforms();
 
 #if UNITY_EDITOR
         Transform sceneViewTransform = SceneView.lastActiveSceneView.camera.transform;
@@ -105,7 +131,19 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
 #endif
     }
 
-    private void UpdateSphereStructs()
+    private void UpdateTransforms()
+    {
+        Debug.Log("Update transforms...");
+
+        m_objectTransforms.Clear();
+
+        for (int i = 0; i < m_objects.Count; i++)
+            m_objectTransforms.Add(Matrix4x4.TRS(Vector3.up * 5f, Quaternion.identity, Vector3.one));
+
+        m_objectTransformBuffer.SetData(m_objectTransforms);
+    }
+
+    private void UpdateObjectData()
     {
         m_gpuDataObjects.Clear();
 

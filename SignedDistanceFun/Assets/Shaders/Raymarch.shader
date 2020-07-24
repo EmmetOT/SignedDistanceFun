@@ -21,12 +21,13 @@ Shader "Unlit/Raymarch"
         Pass
         {
             CGPROGRAM
-            #pragma multi_compile AMBIENT_OCCLUSION_ON AMBIENT_OCCLUSION_OFF AMBIENT_OCCLUSION_TEST
             #pragma vertex vert
             #pragma fragment frag
             #include "Raymarching.cginc"
             #include "UnityCG.cginc" // for UnityObjectToWorldNormal
             #include "UnityLightingCommon.cginc" // for _LightColor0
+            #pragma multi_compile AMBIENT_OCCLUSION_ON AMBIENT_OCCLUSION_OFF AMBIENT_OCCLUSION_TEST
+            #pragma shader_feature SHADOWS_ON
             
 
             struct appdata
@@ -58,7 +59,7 @@ Shader "Unlit/Raymarch"
                 return o;
             }
             
-            fixed4 SimpleLambert(float3 colour, float3 normal, float3 viewDirection, float3 lightPosition) 
+            fixed4 SimpleLambert(float3 colour, float3 position, float3 normal, float3 viewDirection, float3 lightPosition) 
             {
 	            float3 lightDir = normalize(lightPosition);
 	            fixed3 lightCol = _LightColor0.rgb;
@@ -66,12 +67,20 @@ Shader "Unlit/Raymarch"
                 half NdotL = saturate(dot(normal, lightDir));
                 fixed4 c = NdotL;
                 c.a = 1;
-                c.rgb *= colour;// * lightCol;
+                c.rgb *= colour * lightCol;
 
                 float3 lightReflectDirection = reflect(-lightDir, normal);
                 float3 lightSeeDirection = max(0, dot(lightReflectDirection, viewDirection));
                 float3 shininessPower = pow(lightSeeDirection, _SpecularPower) * _Gloss;
                 c.rgb += shininessPower;
+
+                #if SHADOWS_ON
+                // shadows
+
+                float4 rayToLight = Raymarch(position + normal * MIN_SURFACE_DISTANCE * 2, lightDir);
+                if (rayToLight.w < MAXIMUM_DISTANCE)
+                    c *= 0.1;
+                #endif
 
                 return c;
             }
@@ -94,29 +103,30 @@ Shader "Unlit/Raymarch"
                 float3 normal = GetNormal(position);
                 
                 float ambientOcclusion = 1;
-
-                #if AMBIENT_OCCLUSION_ON
+                
+                #ifndef AMBIENT_OCCLUSION_OFF
                 ambientOcclusion = AmbientOcclusion(position, normal, 0, _AmbientOcclusionStepSize, _AmbientOcclusionSteps, _AmbientOcclusionStepSize);
                 #endif
 
                 #if AMBIENT_OCCLUSION_TEST
-                return ambientOcclusion;
+                float4 testVal = ambientOcclusion;
+                testVal.a = 1;
+                return testVal;
                 #endif
 
                 // ambient lighting
 
                 float4 ambient = ambientOcclusion * 0.1;
 
-                // diffuse lighting
+                // diffuse + specular lighting
 
-                //float3 viewDirection = normalize(i.worldPosition - _WorldSpaceCameraPos);
-                //float3 worldNormal = normal;//normalize(mul(unity_ObjectToWorld, normal));
-
-                float4 diffuse = SimpleLambert(hitCol, normal, -rayDirection, _WorldSpaceLightPos0.xyz);
+                float4 diffuse = SimpleLambert(hitCol, position, normal, -rayDirection, _WorldSpaceLightPos0.xyz);
 
                 // specular lighting
 
-                return (diffuse + ambient);
+                float4 light = (diffuse + ambient);
+
+                return light;
             }
             ENDCG
         }

@@ -1,11 +1,11 @@
-﻿#define AMBIENT_OCCLUSION_STEPS 10
-#define MAXIMUM_STEPS 60
-#define MAXIMUM_DISTANCE 100
+﻿#define AMBIENT_OCCLUSION_STEPS 50
+#define MAXIMUM_STEPS 200
+#define MAXIMUM_DISTANCE 200
 #define MIN_SURFACE_DISTANCE 1e-3
+#define NORMAL_SHARPNESS 1e-2
 
 struct SDF_GPU_Data 
 {
-    float4x4 transform;
     float3 data;
     float4 col;
     int type;
@@ -17,9 +17,11 @@ struct SDF_GPU_Data
 #define TYPE_PLANE 3
 
 StructuredBuffer<SDF_GPU_Data> ObjectBuffer : register(t1);
-int ObjectCount : register(t2);
-float Smoothing : register(t3);
+StructuredBuffer<float4x4> ObjectTransformsBuffer : register(t2);
+int ObjectCount : register(t3);
+float Smoothing : register(t4);
 
+// max component of a float3
 float vmax(float3 v)
 {
     return max(max(v.x, v.y), v.z);
@@ -57,7 +59,7 @@ float SDF_Torus(float3 position, float3 centre, float outerRadius, float innerRa
     return distance(float2(distance(position.xz, centre) - outerRadius, position.y), centre) - innerRadius;
 }
 
-float4 opSmoothUnionColor(float d1, float d2, float3 col1, float3 col2) 
+float4 SDF_Op_SmoothUnion(float d1, float d2, float3 col1, float3 col2) 
 {
     float k = Smoothing;
     float h = clamp( 0.5 + 0.5*(d2-d1)/k, 0.0, 1.0 );
@@ -88,10 +90,10 @@ float SDF_Typed(SDF_GPU_Data obj, float3 position, float3 centre)
     return 0;
 }
 
-float4 Test_GetDist(float3 position)
+float4 Map(float3 position)
 {
     SDF_GPU_Data obj = ObjectBuffer[0];
-    float3 centre = mul(obj.transform, float4(0, 0, 0, 1));
+    float3 centre = mul(ObjectTransformsBuffer[0], float4(0, 0, 0, 1));
     float radius = obj.data.x;
 
     float dist = SDF_Typed(obj, position, centre);
@@ -99,16 +101,16 @@ float4 Test_GetDist(float3 position)
 
     float4 result = float4(col, dist);
 
-    for (int i = 1; i < 3; i++)
+    for (int i = 1; i < ObjectCount; i++)
     {
         obj = ObjectBuffer[i];
-        centre = mul(obj.transform, float4(0, 0, 0, 1));
+        centre = mul(ObjectTransformsBuffer[i], float4(0, 0, 0, 1));
         radius = obj.data.x;
 
         dist = SDF_Typed(obj, position, centre);
         col = obj.col;
 
-        result = opSmoothUnionColor(result.w, dist, result.rgb, col);
+        result = SDF_Op_SmoothUnion(result.w, dist, result.rgb, col);
 	}
 
     return result;
@@ -116,15 +118,15 @@ float4 Test_GetDist(float3 position)
             
 float3 GetNormal(float3 position)
 {
-    float2 epsilon = float2(1e-2, 0);
+    float2 epsilon = float2(NORMAL_SHARPNESS, 0);
 
     // three partial deriviatives
     float3 gradient = float3(
-        Test_GetDist(position - epsilon.xyy).w,
-        Test_GetDist(position - epsilon.yxy).w,
-        Test_GetDist(position - epsilon.yyx).w);
+        Map(position - epsilon.xyy).w,
+        Map(position - epsilon.yxy).w,
+        Map(position - epsilon.yyx).w);
 
-    float3 normal = Test_GetDist(position).w - gradient;  
+    float3 normal = Map(position).w - gradient;  
                 
     return normalize(normal);
 }
@@ -155,12 +157,12 @@ float4 Raymarch(float3 rayOrigin, float3 rayDirection)
     {
         float3 position = rayOrigin + result.w * rayDirection;
 
-        float4 distResult = Test_GetDist(position);
+        float4 distResult = Map(position);
 
         distanceFromSurface = distResult.w;
         result.w += distanceFromSurface;
 
-        if (distanceFromSurface < MIN_SURFACE_DISTANCE || result.w > MAXIMUM_DISTANCE)
+        if (abs(distanceFromSurface) < MIN_SURFACE_DISTANCE || result.w > MAXIMUM_DISTANCE)
         {
             result.rgb = distResult.rgb;
             break;

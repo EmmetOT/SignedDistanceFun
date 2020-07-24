@@ -39,16 +39,14 @@ public class SDFObject : MonoBehaviour
 
 public struct SDF_GPU_Data
 {
-    public const int Stride = 24 * 4;
+    public const int Stride = 8 * 4;
 
-    public Matrix4x4 transform;
     public Vector3 data;
     public Color col;
     public int type;
 
     public SDF_GPU_Data(SDFObject obj)
     {
-        transform = obj.transform.localToWorldMatrix;
         data = obj.Data;
         col = obj.Colour;
         type = (int)obj.ObjectType;
