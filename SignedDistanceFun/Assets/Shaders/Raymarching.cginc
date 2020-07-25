@@ -1,8 +1,11 @@
-﻿#define AMBIENT_OCCLUSION_STEPS 50
-#define MAXIMUM_STEPS 200
-#define MAXIMUM_DISTANCE 200
+﻿#define AMBIENT_OCCLUSION_STEPS 12.0
+#define AMBIENT_OCCLUSION_STEP_SIZE 0.01
+
+#define MAXIMUM_STEPS 100
+#define MAXIMUM_DISTANCE 100
 #define MIN_SURFACE_DISTANCE 1e-3
 #define NORMAL_SHARPNESS 1e-2
+#define PI 3.14159
 
 struct SDF_GPU_Data 
 {
@@ -20,6 +23,17 @@ StructuredBuffer<SDF_GPU_Data> ObjectBuffer : register(t1);
 StructuredBuffer<float4x4> ObjectTransformsBuffer : register(t2);
 int ObjectCount : register(t3);
 float Smoothing : register(t4);
+
+float3x3 rotate(float3 v, float angle)
+{
+	float c = cos(angle);
+	float s = sin(angle);
+	
+	return float3x3(c + (1.0 - c) * v.x * v.x, (1.0 - c) * v.x * v.y - s * v.z, (1.0 - c) * v.x * v.z + s * v.y,
+		(1.0 - c) * v.x * v.y + s * v.z, c + (1.0 - c) * v.y * v.y, (1.0 - c) * v.y * v.z - s * v.x,
+		(1.0 - c) * v.x * v.z - s * v.y, (1.0 - c) * v.y * v.z + s * v.x, c + (1.0 - c) * v.z * v.z
+		);
+}
 
 // max component of a float3
 float vmax(float3 v)
@@ -90,6 +104,22 @@ float SDF_Typed(SDF_GPU_Data obj, float3 position, float3 centre)
     return 0;
 }
 
+float box(float3 p, float3 data)
+{
+    return max(max(abs(p.x)-data.x,abs(p.y)-data.y),abs(p.z)-data.z);
+}
+
+
+float4 StaticMap(float3 p)
+{
+    float d = -box(p-float3(0, 10, 0),float3(10, 10, 10));
+    d = min(d, box(mul(rotate(float3(0, 1, 0), 1), (p - float3(4, 5, 6))), float3(3, 5, 3)));
+	d = min(d, box(mul(rotate(float3(0, 1, 0), -1), (p-float3(-4.,2.,0.))), float3(2, 2, 2)));
+	d = max(d, -p.z-9.);
+	
+	return float4(1, 1, 1, d);
+}
+
 float4 Map(float3 position)
 {
     SDF_GPU_Data obj = ObjectBuffer[0];
@@ -130,22 +160,21 @@ float3 GetNormal(float3 position)
                 
     return normalize(normal);
 }
-
-float AmbientOcclusion(float3 pos, float3 normal, float3 sphereCentre, float sphereRadius, int steps, float stepSize)
+float AmbientOcclusion(float3 pos, float3 normal)
 {
     float sum = 0;
     float maxSum = 0;
 
-    for (int i = 0; i < steps; i ++)
+    for (int i = 0; i < AMBIENT_OCCLUSION_STEPS; i ++)
     {
-        float increment = (i + 1) * stepSize;
+        float increment = (i + 1) * AMBIENT_OCCLUSION_STEP_SIZE;
 
         float3 p = pos + normal * increment;
-        sum    += 1.0 / pow(2.0, i) * SDF_Sphere(p, sphereCentre, sphereRadius);
+        sum    += 1.0 / pow(2.0, i) * Map(p).w;
         maxSum += 1.0 / pow(2.0, i) * increment;
     }
 
-    return sum / maxSum;
+    return saturate(sum / maxSum);
 }
 
 float4 Raymarch(float3 rayOrigin, float3 rayDirection)

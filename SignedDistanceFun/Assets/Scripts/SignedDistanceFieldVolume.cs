@@ -155,8 +155,6 @@ public class SignedDistanceFieldVolume : Singleton<SignedDistanceFieldVolume>
 
     private void UpdateTransforms()
     {
-        Debug.Log("Update transforms...");
-
         m_objectTransforms.Clear();
 
         for (int i = 0; i < m_objects.Count; i++)

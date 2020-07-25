@@ -10,8 +10,6 @@ Shader "Unlit/Raymarch"
         _Gloss("Gloss", Range(0,1)) = 1
 
         _Smoothing("Smoothing", float) = 32
-        _AmbientOcclusionSteps("Ambient Occlusion Step", int) = 10
-        _AmbientOcclusionStepSize("Ambient Occlusion Step Size", float) = 0.1
     }
     SubShader
     {
@@ -47,9 +45,6 @@ Shader "Unlit/Raymarch"
             float _SpecularPower;
             float _Gloss;
 
-            int _AmbientOcclusionSteps;
-            float _AmbientOcclusionStepSize;
-
             v2f vert (appdata v)
             {
                 v2f o;
@@ -59,7 +54,7 @@ Shader "Unlit/Raymarch"
                 return o;
             }
             
-            fixed4 SimpleLambert(float3 colour, float3 position, float3 normal, float3 viewDirection, float3 lightPosition) 
+            fixed4 SimpleLambert(float3 colour, float3 position, float3 normal, float ambientOcclusion, float3 viewDirection, float3 lightPosition) 
             {
 	            float3 lightDir = normalize(lightPosition);
 	            fixed3 lightCol = _LightColor0.rgb;
@@ -73,6 +68,8 @@ Shader "Unlit/Raymarch"
                 float3 lightSeeDirection = max(0, dot(lightReflectDirection, viewDirection));
                 float3 shininessPower = pow(lightSeeDirection, _SpecularPower) * _Gloss;
                 c.rgb += shininessPower;
+
+                c.rgb *= ambientOcclusion;
 
                 #if SHADOWS_ON
                 // shadows
@@ -105,7 +102,7 @@ Shader "Unlit/Raymarch"
                 float ambientOcclusion = 1;
                 
                 #ifndef AMBIENT_OCCLUSION_OFF
-                ambientOcclusion = AmbientOcclusion(position, normal, 0, _AmbientOcclusionStepSize, _AmbientOcclusionSteps, _AmbientOcclusionStepSize);
+                ambientOcclusion = AmbientOcclusion(position, normal);
                 #endif
 
                 #if AMBIENT_OCCLUSION_TEST
@@ -116,15 +113,15 @@ Shader "Unlit/Raymarch"
 
                 // ambient lighting
 
-                float4 ambient = ambientOcclusion * 0.1;
+                float4 ambient = 0.1;
 
                 // diffuse + specular lighting
 
-                float4 diffuse = SimpleLambert(hitCol, position, normal, -rayDirection, _WorldSpaceLightPos0.xyz);
+                float4 diffuseAndSpecular = SimpleLambert(hitCol, position, normal, ambientOcclusion, -rayDirection, _WorldSpaceLightPos0.xyz);
 
                 // specular lighting
 
-                float4 light = (diffuse + ambient);
+                float4 light = (diffuseAndSpecular + ambient);
 
                 return light;
             }
